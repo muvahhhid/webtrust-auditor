@@ -229,4 +229,6 @@ This project demonstrates practical knowledge in:
 
 Created by Muvahhhid
 
+## License
+
 This project is intended for educational and defensive security purposes.
