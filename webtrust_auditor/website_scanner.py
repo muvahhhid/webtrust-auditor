@@ -33,7 +33,7 @@ SECURITY_HEADERS = {
 def normalize_url(url: str) -> str:
     """
     Ensures the URL has http:// or https://.
-    If the user writes example.com, we convert it to https://example.com.
+    If the user writes example.com, it becomes https://example.com.
     """
     if not url.startswith(("http://", "https://")):
         return "https://" + url
@@ -56,6 +56,7 @@ def scan_website(url: str) -> dict:
         "status_code": None,
         "is_https": False,
         "headers": {},
+        "headers_lower": {},
         "findings": [],
         "error": None
     }
@@ -66,13 +67,14 @@ def scan_website(url: str) -> dict:
             timeout=30,
             allow_redirects=True,
             headers={
-                "User-Agent": "WebTrust-Auditor/0.1"
+                "User-Agent": "WebTrust-Auditor/1.1"
             }
         )
 
         result["final_url"] = response.url
         result["status_code"] = response.status_code
         result["headers"] = dict(response.headers)
+        result["headers_lower"] = normalize_headers(response.headers)
 
         parsed_final_url = urlparse(response.url)
         result["is_https"] = parsed_final_url.scheme == "https"
@@ -86,7 +88,7 @@ def scan_website(url: str) -> dict:
                 "recommendation": "Enable HTTPS and redirect all HTTP traffic to HTTPS."
             })
 
-        check_security_headers(response.headers, result)
+        check_security_headers(result)
 
     except requests.exceptions.RequestException as error:
         result["error"] = str(error)
@@ -94,13 +96,29 @@ def scan_website(url: str) -> dict:
     return result
 
 
-def check_security_headers(headers, result: dict) -> None:
+def normalize_headers(headers) -> dict:
+    """
+    Converts response headers to a lowercase dictionary.
+
+    HTTP header names are case-insensitive.
+    This prevents false findings when a server returns headers like:
+    content-security-policy instead of Content-Security-Policy.
+    """
+    return {
+        str(header_name).lower(): header_value
+        for header_name, header_value in headers.items()
+    }
+
+
+def check_security_headers(result: dict) -> None:
     """
     Checks whether important security headers exist.
-    Missing headers are added as findings.
+    Header names are checked case-insensitively.
     """
+    headers_lower = result.get("headers_lower", {})
+
     for header_name, header_info in SECURITY_HEADERS.items():
-        if header_name not in headers:
+        if header_name.lower() not in headers_lower:
             result["findings"].append({
                 "title": f"Missing {header_name}",
                 "severity": header_info["severity"],

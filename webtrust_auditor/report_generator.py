@@ -127,13 +127,19 @@ def append_website_section(lines: list, result: dict) -> None:
     lines.append("| Header | Status |")
     lines.append("|---|---|")
 
-    headers = result.get("headers", {})
+    headers_lower = result.get("headers_lower", {})
+
+    if not headers_lower:
+        headers_lower = {
+            str(header_name).lower(): header_value
+            for header_name, header_value in result.get("headers", {}).items()
+        }
 
     for header_name in SECURITY_HEADERS.keys():
-        status = "Present" if header_name in headers else "Missing"
+        status = "Present" if header_name.lower() in headers_lower else "Missing"
         lines.append(f"| `{header_name}` | {status} |")
 
-    lines.append("")
+        lines.append("")
 
     append_findings_sections(lines, findings, "Website")
 

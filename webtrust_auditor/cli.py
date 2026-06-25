@@ -3,7 +3,9 @@ import argparse
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich import box
 
+from webtrust_auditor import __version__
 from webtrust_auditor.website_scanner import scan_website
 from webtrust_auditor.email_scanner import scan_email_domain
 from webtrust_auditor.repo_scanner import scan_repository
@@ -41,30 +43,34 @@ def main():
 
     parser.add_argument(
         "--output",
-        default="reports/webtrust-report.md",
-        help="Path where the Markdown report should be saved."
+        help="Optional path where the Markdown report should be saved."
+    )
+
+    parser.add_argument(
+        "--details",
+        action="store_true",
+        help="Show detailed explanations for every finding in the terminal."
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"WebTrust Auditor {__version__}"
     )
 
     args = parser.parse_args()
 
     console.print(
         Panel.fit(
-            "WebTrust Auditor\n"
+            f"[bold]WebTrust Auditor[/bold] [cyan]v{__version__}[/cyan]\n"
             "Defensive website, domain and repository security readiness checker.",
-            title="Starting"
+            title="Starting",
+            border_style="cyan"
         )
     )
 
     if not args.url and not args.domain and not args.repo:
-        console.print("[yellow]No URL, domain or repository path provided yet.[/yellow]")
-        console.print("Examples:")
-        console.print("[cyan]python webtrust.py --url https://example.com[/cyan]")
-        console.print("[cyan]python webtrust.py --domain example.com[/cyan]")
-        console.print("[cyan]python webtrust.py --repo C:\\path\\to\\project[/cyan]")
-        console.print(
-            "[cyan]python webtrust.py --url https://example.com "
-            "--domain example.com --repo C:\\path\\to\\project[/cyan]"
-        )
+        show_examples()
         return
 
     website_result = None
@@ -73,35 +79,56 @@ def main():
 
     if args.url:
         website_result = scan_website(args.url)
-        display_website_result(website_result)
+        display_website_result(website_result, args.details)
 
     if args.domain:
         email_result = scan_email_domain(args.domain, args.dkim_selector)
-        display_email_result(email_result)
+        display_email_result(email_result, args.details)
 
     if args.repo:
         repository_result = scan_repository(args.repo)
-        display_repository_result(repository_result)
+        display_repository_result(repository_result, args.details)
 
-    report_path = generate_markdown_report(
-        website_result,
-        email_result,
-        repository_result,
-        args.output
+    display_final_summary(website_result, email_result, repository_result)
+
+    if args.output:
+        report_path = generate_markdown_report(
+            website_result,
+            email_result,
+            repository_result,
+            args.output
+        )
+
+        console.print("")
+        console.print(f"[green]Markdown report saved to:[/green] {report_path}")
+    else:
+        console.print("")
+        console.print(
+            "[dim]Tip: add --output reports/report.md if you also want a Markdown report.[/dim]"
+        )
+
+
+def show_examples():
+    console.print("[yellow]No URL, domain or repository path provided yet.[/yellow]")
+    console.print("")
+    console.print("[bold]Examples:[/bold]")
+    console.print("[cyan]python webtrust.py --url https://example.com[/cyan]")
+    console.print("[cyan]python webtrust.py --domain example.com[/cyan]")
+    console.print("[cyan]python webtrust.py --repo .[/cyan]")
+    console.print(
+        "[cyan]python webtrust.py --url https://example.com "
+        "--domain example.com --repo .[/cyan]"
     )
 
-    console.print("")
-    console.print(f"[green]Markdown report saved to:[/green] {report_path}")
 
-
-def display_website_result(result: dict):
-    console.print("\n[bold cyan]Website Scan Result[/bold cyan]")
+def display_website_result(result: dict, show_details: bool):
+    console.print("\n[bold cyan]Website Security[/bold cyan]")
 
     if result["error"]:
         console.print(f"[bold red]Error:[/bold red] {result['error']}")
         return
 
-    summary_table = Table(title="Target Summary")
+    summary_table = Table(title="Target", box=box.ROUNDED)
     summary_table.add_column("Item", style="cyan")
     summary_table.add_column("Value", style="white")
 
@@ -113,24 +140,26 @@ def display_website_result(result: dict):
     console.print(summary_table)
 
     findings = result["findings"]
-    display_score_table(findings, "Website Security Score")
+    display_score_table(findings, "Website Score")
 
-    if not findings:
+    if findings:
+        display_findings_table(findings)
+        display_top_recommendations(findings)
+
+        if show_details:
+            display_detailed_findings(findings)
+    else:
         console.print("[green]No basic website findings found.[/green]")
-        return
-
-    display_findings_table(findings)
-    display_detailed_findings(findings)
 
 
-def display_email_result(result: dict):
-    console.print("\n[bold cyan]Email / Domain Scan Result[/bold cyan]")
+def display_email_result(result: dict, show_details: bool):
+    console.print("\n[bold cyan]Email / Domain Security[/bold cyan]")
 
     if result["error"]:
         console.print(f"[bold red]Error:[/bold red] {result['error']}")
         return
 
-    summary_table = Table(title="DNS Summary")
+    summary_table = Table(title="DNS Summary", box=box.ROUNDED)
     summary_table.add_column("Item", style="cyan")
     summary_table.add_column("Value", style="white")
 
@@ -145,18 +174,20 @@ def display_email_result(result: dict):
     console.print(summary_table)
 
     findings = result["findings"]
-    display_score_table(findings, "Email Domain Security Score")
+    display_score_table(findings, "Email Domain Score")
 
-    if not findings:
+    if findings:
+        display_findings_table(findings)
+        display_top_recommendations(findings)
+
+        if show_details:
+            display_detailed_findings(findings)
+    else:
         console.print("[green]No basic email/domain findings found.[/green]")
-        return
-
-    display_findings_table(findings)
-    display_detailed_findings(findings)
 
 
-def display_repository_result(result: dict):
-    console.print("\n[bold cyan]Repository Hygiene Scan Result[/bold cyan]")
+def display_repository_result(result: dict, show_details: bool):
+    console.print("\n[bold cyan]Repository Hygiene[/bold cyan]")
 
     if result["error"]:
         console.print(f"[bold red]Error:[/bold red] {result['error']}")
@@ -164,7 +195,7 @@ def display_repository_result(result: dict):
 
     summary = result["summary"]
 
-    summary_table = Table(title="Repository Summary")
+    summary_table = Table(title="Repository Summary", box=box.ROUNDED)
     summary_table.add_column("Item", style="cyan")
     summary_table.add_column("Value", style="white")
 
@@ -176,43 +207,50 @@ def display_repository_result(result: dict):
     summary_table.add_row(".dockerignore", "Yes" if summary["dockerignore_exists"] else "No")
     summary_table.add_row("Sensitive Files", str(summary["sensitive_files_found"]))
     summary_table.add_row("Database Files", str(summary["database_files_found"]))
-    summary_table.add_row("Secret Keyword Hits", str(summary["secret_keyword_hits"]))
+    summary_table.add_row("Secret Hits", str(summary["secret_keyword_hits"]))
 
     console.print(summary_table)
 
     findings = result["findings"]
-    display_score_table(findings, "Repository Hygiene Score")
+    display_score_table(findings, "Repository Score")
 
-    if not findings:
+    if findings:
+        display_findings_table(findings)
+        display_top_recommendations(findings)
+
+        if show_details:
+            display_detailed_findings(findings)
+    else:
         console.print("[green]No basic repository hygiene findings found.[/green]")
-        return
-
-    display_findings_table(findings)
-    display_detailed_findings(findings)
 
 
 def display_score_table(findings: list, title: str):
     score_result = calculate_score(findings)
     severity_counts = count_findings_by_severity(findings)
 
-    score_table = Table(title=title)
-    score_table.add_column("Item", style="cyan")
-    score_table.add_column("Value", style="white")
+    score_table = Table(title=title, box=box.SIMPLE_HEAVY)
+    score_table.add_column("Score", style="bold cyan")
+    score_table.add_column("Rating", style="bold white")
+    score_table.add_column("High", justify="center")
+    score_table.add_column("Medium", justify="center")
+    score_table.add_column("Low", justify="center")
+    score_table.add_column("Info", justify="center")
 
-    score_table.add_row("Score", f"{score_result['score']} / 100")
-    score_table.add_row("Rating", score_result["rating"])
-    score_table.add_row("High Findings", str(severity_counts["High"]))
-    score_table.add_row("Medium Findings", str(severity_counts["Medium"]))
-    score_table.add_row("Low Findings", str(severity_counts["Low"]))
-    score_table.add_row("Info Findings", str(severity_counts["Info"]))
-    score_table.add_row("Total Penalty", f"-{score_result['total_penalty']}")
+    score_table.add_row(
+        f"{score_result['score']} / 100",
+        score_result["rating"],
+        str(severity_counts["High"]),
+        str(severity_counts["Medium"]),
+        str(severity_counts["Low"]),
+        str(severity_counts["Info"])
+    )
 
     console.print(score_table)
 
 
 def display_findings_table(findings: list):
-    findings_table = Table(title="Findings")
-    findings_table.add_column("Severity", style="red")
+    findings_table = Table(title="Findings", box=box.ROUNDED)
+    findings_table.add_column("Severity", style="red", width=10)
     findings_table.add_column("Finding", style="white")
     findings_table.add_column("Recommendation", style="green")
 
@@ -226,6 +264,21 @@ def display_findings_table(findings: list):
     console.print(findings_table)
 
 
+def display_top_recommendations(findings: list):
+    actionable_findings = [
+        finding for finding in findings
+        if finding.get("severity") in {"High", "Medium", "Low"}
+    ]
+
+    if not actionable_findings:
+        return
+
+    console.print("[bold]Recommended next steps:[/bold]")
+
+    for index, finding in enumerate(actionable_findings[:5], start=1):
+        console.print(f"{index}. {finding['recommendation']}")
+
+
 def display_detailed_findings(findings: list):
     console.print("\n[bold]Detailed Explanation[/bold]")
 
@@ -235,3 +288,46 @@ def display_detailed_findings(findings: list):
         console.print(f"[yellow]Evidence:[/yellow] {finding['evidence']}")
         console.print(f"[cyan]Why it matters:[/cyan] {finding['why']}")
         console.print(f"[green]Recommendation:[/green] {finding['recommendation']}")
+
+
+def display_final_summary(
+    website_result: dict | None,
+    email_result: dict | None,
+    repository_result: dict | None
+):
+    summary_table = Table(title="Final Summary", box=box.DOUBLE_EDGE)
+    summary_table.add_column("Component", style="cyan")
+    summary_table.add_column("Score", style="bold white")
+    summary_table.add_column("Rating", style="bold white")
+    summary_table.add_column("Findings", justify="center")
+    summary_table.add_column("Status", style="green")
+
+    add_summary_row(summary_table, "Website", website_result)
+    add_summary_row(summary_table, "Email / Domain", email_result)
+    add_summary_row(summary_table, "Repository", repository_result)
+
+    console.print("\n")
+    console.print(summary_table)
+
+
+def add_summary_row(table: Table, component_name: str, result: dict | None):
+    if result is None:
+        table.add_row(component_name, "Not scanned", "-", "-", "Skipped")
+        return
+
+    if result.get("error"):
+        table.add_row(component_name, "Error", "-", "-", "Failed")
+        return
+
+    findings = result.get("findings", [])
+    score_result = calculate_score(findings)
+
+    status = "Good" if score_result["score"] >= 90 else "Needs review"
+
+    table.add_row(
+        component_name,
+        f"{score_result['score']} / 100",
+        score_result["rating"],
+        str(len(findings)),
+        status
+    )

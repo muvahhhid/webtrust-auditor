@@ -2,7 +2,7 @@
 
 ## Scan Information
 
-- Scan date: 2026-06-22 00:58:45
+- Scan date: 2026-06-26 02:03:18
 - Target URL: https://github.com
 - Final URL: https://github.com/
 - Status code: 200
@@ -38,10 +38,15 @@ The website scan detected **1 finding(s)** related to basic website security rea
 | Header | Status |
 |---|---|
 | `Content-Security-Policy` | Present |
+
 | `Strict-Transport-Security` | Present |
+
 | `X-Frame-Options` | Present |
+
 | `X-Content-Type-Options` | Present |
+
 | `Referrer-Policy` | Present |
+
 | `Permissions-Policy` | Missing |
 
 ### Website Findings Overview
