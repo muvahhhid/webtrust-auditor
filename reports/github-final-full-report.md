@@ -2,7 +2,7 @@
 
 ## Scan Information
 
-- Scan date: 2026-06-26 02:03:18
+- Scan date: 2026-06-27 18:50:35
 - Target URL: https://github.com
 - Final URL: https://github.com/
 - Status code: 200
@@ -163,7 +163,7 @@ Run the scan again with --dkim-selector if you know the selector.
 ### Repository Summary
 
 - Repository path: C:\Users\user\Desktop\webtrust-auditor
-- Files checked: 11
+- Files checked: 19
 - .gitignore exists: Yes
 - README.md exists: Yes
 - Dockerfile exists: No

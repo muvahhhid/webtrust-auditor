@@ -5,6 +5,7 @@ env/
 
 # Python cache
 __pycache__/
+.pytest_cache/
 *.pyc
 *.pyo
 *.pyd
@@ -33,6 +34,7 @@ obj/
 # Reports generated locally
 reports/*.html
 reports/*.pdf
+reports/*.json
 
 # OS files
 .DS_Store

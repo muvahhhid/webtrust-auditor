@@ -1,4 +1,8 @@
 import argparse
+import argparse
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
@@ -24,6 +28,11 @@ def main():
     parser.add_argument(
         "--url",
         help="Website URL to scan, for example: https://example.com"
+    )
+    
+    parser.add_argument(
+        "--json-output",
+        help="Optional path where the JSON report should be saved."
     )
 
     parser.add_argument(
@@ -101,12 +110,23 @@ def main():
 
         console.print("")
         console.print(f"[green]Markdown report saved to:[/green] {report_path}")
-    else:
-        console.print("")
-        console.print(
-            "[dim]Tip: add --output reports/report.md if you also want a Markdown report.[/dim]"
+
+    if args.json_output:
+        json_path = save_json_output(
+            website_result,
+            email_result,
+            repository_result,
+            args.json_output
         )
 
+        console.print("")
+        console.print(f"[green]JSON report saved to:[/green] {json_path}")
+
+    if not args.output and not args.json_output:
+        console.print("")
+        console.print(
+            "[dim]Tip: add --output reports/report.md or --json-output reports/result.json if you also want a report file.[/dim]"
+        )
 
 def show_examples():
     console.print("[yellow]No URL, domain or repository path provided yet.[/yellow]")
@@ -136,6 +156,16 @@ def display_website_result(result: dict, show_details: bool):
     summary_table.add_row("Final URL", result["final_url"])
     summary_table.add_row("Status Code", str(result["status_code"]))
     summary_table.add_row("HTTPS", "Yes" if result["is_https"] else "No")
+    ssl_info = result.get("ssl_certificate", {})
+
+    if ssl_info.get("checked"):
+        days_left = ssl_info.get("days_until_expiry")
+        not_after = ssl_info.get("not_after")
+
+        if days_left is not None and not_after:
+            summary_table.add_row("SSL Expires", f"{not_after} ({days_left} days left)")
+        elif ssl_info.get("error"):
+            summary_table.add_row("SSL Certificate", f"Check failed: {ssl_info['error']}")
 
     console.print(summary_table)
 
@@ -331,3 +361,80 @@ def add_summary_row(table: Table, component_name: str, result: dict | None):
         str(len(findings)),
         status
     )
+    
+def save_json_output(
+    website_result: dict | None,
+    email_result: dict | None,
+    repository_result: dict | None,
+    output_path: str
+) -> str:
+    """
+    Saves scan results as machine-readable JSON.
+    """
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    json_data = build_json_output(
+        website_result,
+        email_result,
+        repository_result
+    )
+
+    output_file.write_text(
+        json.dumps(json_data, indent=2, ensure_ascii=False),
+        encoding="utf-8"
+    )
+
+    return str(output_file)
+
+
+def build_json_output(
+    website_result: dict | None,
+    email_result: dict | None,
+    repository_result: dict | None
+) -> dict:
+    """
+    Builds a structured JSON report.
+    """
+    return {
+        "tool": "WebTrust Auditor",
+        "version": __version__,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "components": {
+            "website": build_component_json(website_result),
+            "email_domain": build_component_json(email_result),
+            "repository": build_component_json(repository_result)
+        }
+    }
+
+
+def build_component_json(result: dict | None) -> dict:
+    """
+    Adds score and severity summary to a scan result.
+    """
+    if result is None:
+        return {
+            "scanned": False,
+            "status": "skipped"
+        }
+
+    if result.get("error"):
+        return {
+            "scanned": True,
+            "status": "failed",
+            "error": result.get("error"),
+            "raw_result": result
+        }
+
+    findings = result.get("findings", [])
+    score_result = calculate_score(findings)
+    severity_counts = count_findings_by_severity(findings)
+
+    return {
+        "scanned": True,
+        "status": "completed",
+        "score": score_result,
+        "severity_counts": severity_counts,
+        "findings_count": len(findings),
+        "raw_result": result
+    }

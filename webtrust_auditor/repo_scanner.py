@@ -55,6 +55,50 @@ SECRET_KEYWORDS = [
 ]
 
 
+SECRET_PATTERNS = [
+    {
+        "name": "GitHub personal access token",
+        "regex": re.compile(r"\bghp_[A-Za-z0-9_]{20,}\b"),
+        "severity": "High",
+        "why": "A GitHub personal access token can provide access to repositories or GitHub account actions.",
+        "recommendation": "Revoke the token immediately and remove it from the repository history."
+    },
+    {
+        "name": "GitHub fine-grained token",
+        "regex": re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+        "severity": "High",
+        "why": "A GitHub fine-grained token can provide access to selected repositories or GitHub resources.",
+        "recommendation": "Revoke the token immediately and remove it from the repository history."
+    },
+    {
+        "name": "AWS access key ID",
+        "regex": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+        "severity": "High",
+        "why": "An exposed AWS access key can allow unauthorized access to cloud resources.",
+        "recommendation": "Disable or rotate the AWS key immediately and review AWS account activity."
+    },
+    {
+        "name": "Private key block",
+        "regex": re.compile(
+            r"-----BEGIN (?:RSA |DSA |EC |OPENSSH |)?PRIVATE KEY-----",
+            re.IGNORECASE
+        ),
+        "severity": "High",
+        "why": "Private keys must never be committed to public repositories.",
+        "recommendation": "Remove the private key, rotate any related credentials and check repository history."
+    },
+    {
+        "name": "JWT-like token",
+        "regex": re.compile(
+            r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"
+        ),
+        "severity": "Medium",
+        "why": "JWT tokens may contain sensitive claims or allow unauthorized access if still valid.",
+        "recommendation": "Review the token, invalidate it if necessary and avoid committing tokens to repositories."
+    }
+]
+
+
 TEXT_FILE_EXTENSIONS = {
     ".txt",
     ".md",
@@ -167,7 +211,6 @@ def check_project_metadata(root_path: Path, result: dict) -> None:
             "recommendation": "Add a README.md with project purpose, setup instructions, usage examples and security notes."
         })
 
-
     if dockerfile_path.exists() and not dockerignore_path.exists():
         result["findings"].append({
             "title": ".dockerignore is missing",
@@ -215,7 +258,7 @@ def check_gitignore_rules(root_path: Path, result: dict) -> None:
 
 def scan_files(root_path: Path, result: dict) -> None:
     """
-    Walks through repository files and checks for sensitive files and secret-like assignments.
+    Walks through repository files and checks for sensitive files and secret-like patterns.
     """
     for file_path in root_path.rglob("*"):
         if should_skip_path(file_path):
@@ -228,6 +271,7 @@ def scan_files(root_path: Path, result: dict) -> None:
 
         check_sensitive_file(file_path, root_path, result)
         check_secret_assignments(file_path, root_path, result)
+        check_advanced_secret_patterns(file_path, root_path, result)
 
 
 def should_skip_path(path: Path) -> bool:
@@ -329,6 +373,46 @@ def check_secret_assignments(file_path: Path, root_path: Path, result: dict) -> 
                 return
 
 
+def check_advanced_secret_patterns(file_path: Path, root_path: Path, result: dict) -> None:
+    """
+    Looks for known secret formats such as GitHub tokens, AWS keys,
+    private key blocks and JWT-like tokens.
+    """
+    suffix = file_path.suffix.lower()
+
+    if suffix not in TEXT_FILE_EXTENSIONS:
+        return
+
+    try:
+        if file_path.stat().st_size > MAX_TEXT_FILE_SIZE_BYTES:
+            return
+    except OSError:
+        return
+
+    try:
+        content = file_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return
+
+    for pattern_info in SECRET_PATTERNS:
+        match = pattern_info["regex"].search(content)
+
+        if not match:
+            continue
+
+        relative_path = get_relative_path(file_path, root_path)
+        line_number = get_line_number_from_index(content, match.start())
+        result["summary"]["secret_keyword_hits"] += 1
+
+        result["findings"].append({
+            "title": f"Possible {pattern_info['name']} found",
+            "severity": pattern_info["severity"],
+            "evidence": f"{pattern_info['name']} pattern detected in file: {relative_path}, line {line_number}",
+            "why": pattern_info["why"],
+            "recommendation": pattern_info["recommendation"]
+        })
+
+
 def should_skip_line(line: str) -> bool:
     """
     Skips empty lines, comments and obvious documentation lines.
@@ -393,6 +477,13 @@ def contains_keyword(text: str, keyword: str) -> bool:
     """
     pattern = rf"(?<![a-zA-Z0-9_]){re.escape(keyword)}(?![a-zA-Z0-9_])"
     return re.search(pattern, text, flags=re.IGNORECASE) is not None
+
+
+def get_line_number_from_index(content: str, index: int) -> int:
+    """
+    Converts a character index into a line number.
+    """
+    return content.count("\n", 0, index) + 1
 
 
 def get_relative_path(file_path: Path, root_path: Path) -> str:
