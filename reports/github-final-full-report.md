@@ -2,7 +2,7 @@
 
 ## Scan Information
 
-- Scan date: 2026-06-27 20:05:44
+- Scan date: 2026-06-27 21:33:40
 - Target URL: https://github.com
 - Final URL: https://github.com/
 - Status code: 200
@@ -101,7 +101,7 @@ Add the Permissions-Policy header to improve browser-side security.
 
 ### MX Records
 
-- `0 github-com.mail.protection.outlook.com`
+- `github-com.mail.protection.outlook.com`
 
 ### SPF Records
 
@@ -163,7 +163,7 @@ Run the scan again with --dkim-selector if you know the selector.
 ### Repository Summary
 
 - Repository path: C:\Users\user\Desktop\webtrust-auditor
-- Files checked: 25
+- Files checked: 26
 - .gitignore exists: Yes
 - README.md exists: Yes
 - Dockerfile exists: No
