@@ -14,6 +14,7 @@ from webtrust_auditor.website_scanner import scan_website
 from webtrust_auditor.email_scanner import scan_email_domain
 from webtrust_auditor.repo_scanner import scan_repository
 from webtrust_auditor.report_generator import generate_markdown_report
+from webtrust_auditor.pdf_generator import generate_pdf_report
 from webtrust_auditor.scoring import calculate_score, count_findings_by_severity
 
 
@@ -33,6 +34,11 @@ def main():
     parser.add_argument(
         "--json-output",
         help="Optional path where the JSON report should be saved."
+    )
+    
+    parser.add_argument(
+        "--pdf-output",
+        help="Optional path where the PDF report should be saved."
     )
 
     parser.add_argument(
@@ -121,11 +127,22 @@ def main():
 
         console.print("")
         console.print(f"[green]JSON report saved to:[/green] {json_path}")
+    
+    if args.pdf_output:
+        pdf_path = generate_pdf_report(
+            website_result,
+            email_result,
+            repository_result,
+            args.pdf_output
+        )
 
-    if not args.output and not args.json_output:
+        console.print("")
+        console.print(f"[green]PDF report saved to:[/green] {pdf_path}")
+    
+    if not args.output and not args.json_output and not args.pdf_output:
         console.print("")
         console.print(
-            "[dim]Tip: add --output reports/report.md or --json-output reports/result.json if you also want a report file.[/dim]"
+            "[dim]Tip: add --output reports/report.md, --json-output reports/result.json or --pdf-output reports/report.pdf if you also want a report file.[/dim]"
         )
 
 def show_examples():
