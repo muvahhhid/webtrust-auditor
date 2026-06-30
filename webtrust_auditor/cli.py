@@ -1,457 +1,554 @@
 import argparse
-import argparse
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
 from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 from webtrust_auditor import __version__
-from webtrust_auditor.website_scanner import scan_website
 from webtrust_auditor.email_scanner import scan_email_domain
-from webtrust_auditor.repo_scanner import scan_repository
-from webtrust_auditor.report_generator import generate_markdown_report
 from webtrust_auditor.pdf_generator import generate_pdf_report
-from webtrust_auditor.scoring import calculate_score, count_findings_by_severity
+from webtrust_auditor.references import enrich_result_references
+from webtrust_auditor.report_generator import generate_markdown_report
+from webtrust_auditor.repo_scanner import scan_repository
+from webtrust_auditor.scoring import calculate_score
+from webtrust_auditor.website_scanner import scan_website
 
 
 console = Console()
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="WebTrust Auditor - defensive security readiness checker."
-    )
-
-    parser.add_argument(
-        "--url",
-        help="Website URL to scan, for example: https://example.com"
-    )
-    
-    parser.add_argument(
-        "--json-output",
-        help="Optional path where the JSON report should be saved."
-    )
-    
-    parser.add_argument(
-        "--pdf-output",
-        help="Optional path where the PDF report should be saved."
-    )
-
-    parser.add_argument(
-        "--domain",
-        help="Email/domain name to check, for example: example.com"
-    )
-
-    parser.add_argument(
-        "--dkim-selector",
-        help="Optional DKIM selector, for example: google"
-    )
-
-    parser.add_argument(
-        "--repo",
-        help="Local repository/project path to check."
-    )
-
-    parser.add_argument(
-        "--output",
-        help="Optional path where the Markdown report should be saved."
-    )
-
-    parser.add_argument(
-        "--details",
-        action="store_true",
-        help="Show detailed explanations for every finding in the terminal."
-    )
-
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"WebTrust Auditor {__version__}"
-    )
-
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
 
-    console.print(
-        Panel.fit(
-            f"[bold]WebTrust Auditor[/bold] [cyan]v{__version__}[/cyan]\n"
-            "Defensive website, domain and repository security readiness checker.",
-            title="Starting",
-            border_style="cyan"
-        )
-    )
-
-    if not args.url and not args.domain and not args.repo:
-        show_examples()
+    if args.version:
+        console.print(f"WebTrust Auditor v{__version__}")
         return
 
     website_result = None
     email_result = None
-    repository_result = None
+    repo_result = None
+
+    console.print(
+        Panel(
+            f"WebTrust Auditor v{__version__}\n"
+            "Defensive website, domain and repository security readiness checker.",
+            title="Starting",
+            border_style="cyan",
+            box=box.ASCII,
+            expand=False,
+        )
+    )
+
+    if args.full_check and not args.url:
+        console.print("[bold red]Error:[/bold red] --full-check requires --url.")
+        return
+
+    if args.url and args.full_check:
+        console.print(
+            Panel(
+                "Full website check enabled.\n"
+                "Use only for websites you own or are authorized to test.\n"
+                "Fixed GET-only checklist. No brute-force, crawling, fuzzing, POST, exploit or bypass.",
+                title="Authorized Full Check",
+                border_style="yellow",
+                box=box.ASCII,
+                expand=False,
+            )
+        )
 
     if args.url:
-        website_result = scan_website(args.url)
-        display_website_result(website_result, args.details)
+        
+
+        with console.status("[red]Checking website, please wait...[/red]", spinner="aesthetic"):
+            website_result = scan_website(args.url, full_check=args.full_check)
+
+        website_result = enrich_result_references(website_result)
+        apply_score(website_result)
+
+        console.print("[green]Website checks completed.[/green]")
+        print_website_result(website_result, args.details)
 
     if args.domain:
-        email_result = scan_email_domain(args.domain, args.dkim_selector)
-        display_email_result(email_result, args.details)
+        console.print("[cyan]Running email/domain checks...[/cyan]")
+
+        with console.status("[bold cyan]Checking email/domain, please wait...[/bold cyan]", spinner="dots"):
+            email_result = scan_email_domain(args.domain, args.dkim_selector)
+
+        email_result = enrich_result_references(email_result)
+        apply_score(email_result)
+
+        console.print("[green]Email/domain checks completed.[/green]")
+        print_email_result(email_result, args.details)
 
     if args.repo:
-        repository_result = scan_repository(args.repo)
-        display_repository_result(repository_result, args.details)
+        console.print("[cyan]Running repository checks...[/cyan]")
 
-    display_final_summary(website_result, email_result, repository_result)
+        with console.status("[bold cyan]Checking repository, please wait...[/bold cyan]", spinner="dots"):
+            repo_result = scan_repository(args.repo)
+
+        repo_result = normalize_repository_display(repo_result, args.repo)
+        repo_result = enrich_result_references(repo_result)
+        apply_score(repo_result)
+
+        console.print("[green]Repository checks completed.[/green]")
+        print_repository_result(repo_result, args.details)
+
+    print_final_summary(website_result, email_result, repo_result)
 
     if args.output:
-        report_path = generate_markdown_report(
-            website_result,
-            email_result,
-            repository_result,
-            args.output
+        generate_markdown_report(
+            output_path=args.output,
+            website_result=website_result,
+            email_result=email_result,
+            repo_result=repo_result,
         )
-
-        console.print("")
-        console.print(f"[green]Markdown report saved to:[/green] {report_path}")
+        console.print(f"\n[green]Markdown report saved to:[/green] {Path(args.output).resolve()}")
 
     if args.json_output:
-        json_path = save_json_output(
-            website_result,
-            email_result,
-            repository_result,
-            args.json_output
+        save_json_output(
+            output_path=args.json_output,
+            website_result=website_result,
+            email_result=email_result,
+            repo_result=repo_result,
         )
+        console.print(f"\n[green]JSON report saved to:[/green] {args.json_output}")
 
-        console.print("")
-        console.print(f"[green]JSON report saved to:[/green] {json_path}")
-    
     if args.pdf_output:
-        pdf_path = generate_pdf_report(
-            website_result,
-            email_result,
-            repository_result,
-            args.pdf_output
+        generate_pdf_report(
+            output_path=args.pdf_output,
+            website_result=website_result,
+            email_result=email_result,
+            repo_result=repo_result,
         )
+        console.print(f"\n[green]PDF report saved to:[/green] {args.pdf_output}")
 
-        console.print("")
-        console.print(f"[green]PDF report saved to:[/green] {pdf_path}")
-    
     if not args.output and not args.json_output and not args.pdf_output:
-        console.print("")
         console.print(
-            "[dim]Tip: add --output reports/report.md, --json-output reports/result.json or --pdf-output reports/report.pdf if you also want a report file.[/dim]"
+            "\n[dim]Tip: add --output reports/report.md, --json-output reports/result.json "
+            "or --pdf-output reports/report.pdf if you also want a report file.[/dim]"
         )
 
-def show_examples():
-    console.print("[yellow]No URL, domain or repository path provided yet.[/yellow]")
-    console.print("")
-    console.print("[bold]Examples:[/bold]")
-    console.print("[cyan]python webtrust.py --url https://example.com[/cyan]")
-    console.print("[cyan]python webtrust.py --domain example.com[/cyan]")
-    console.print("[cyan]python webtrust.py --repo .[/cyan]")
-    console.print(
-        "[cyan]python webtrust.py --url https://example.com "
-        "--domain example.com --repo .[/cyan]"
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Defensive website, email/domain and repository security readiness checker."
     )
 
+    parser.add_argument("--url", help="Website URL to scan.")
+    parser.add_argument("--domain", help="Email/domain name or email address to scan.")
+    parser.add_argument("--dkim-selector", help="Optional DKIM selector for domain checks.")
+    parser.add_argument("--repo", help="Local repository path to scan.")
+    parser.add_argument("--output", help="Save Markdown report to this path.")
+    parser.add_argument("--json-output", help="Save JSON report to this path.")
+    parser.add_argument("--pdf-output", help="Save PDF report to this path.")
+    parser.add_argument("--details", action="store_true", help="Show detailed explanations.")
+    parser.add_argument(
+        "--full-check",
+        action="store_true",
+        help=(
+            "Enable owner-authorized full website check. Uses a fixed curated list "
+            "of low-impact GET-only exposure checks."
+        ),
+    )
+    parser.add_argument("--version", action="store_true", help="Show version and exit.")
 
-def display_website_result(result: dict, show_details: bool):
+    return parser
+
+
+def normalize_repository_display(result: dict | None, repo_path: str) -> dict | None:
+    if not result:
+        return result
+
+    resolved_path = Path(repo_path).resolve()
+
+    result["display_path"] = str(resolved_path)
+
+    if "has_gitignore" not in result:
+        result["has_gitignore"] = (resolved_path / ".gitignore").exists()
+
+    if "has_readme" not in result:
+        result["has_readme"] = (
+            (resolved_path / "README.md").exists()
+            or (resolved_path / "readme.md").exists()
+        )
+
+    if "has_dockerfile" not in result:
+        result["has_dockerfile"] = (
+            (resolved_path / "Dockerfile").exists()
+            or (resolved_path / "dockerfile").exists()
+        )
+
+    if "has_dockerignore" not in result:
+        result["has_dockerignore"] = (resolved_path / ".dockerignore").exists()
+
+    return result
+
+
+def apply_score(result: dict | None) -> None:
+    if not result:
+        return
+
+    score_data = calculate_score(result.get("findings", []))
+    result["score"] = score_data["score"]
+    result["rating"] = score_data["rating"]
+    result["severity_counts"] = score_data["severity_counts"]
+
+
+def get_first_value(result: dict, keys: list[str], default="N/A"):
+    for key in keys:
+        value = result.get(key)
+
+        if value not in [None, ""]:
+            return value
+
+    return default
+
+
+def get_bool_value(result: dict, keys: list[str]) -> bool:
+    for key in keys:
+        if result.get(key) is True:
+            return True
+
+    return False
+
+
+def print_website_result(result: dict, show_details: bool = False) -> None:
     console.print("\n[bold cyan]Website Security[/bold cyan]")
 
-    if result["error"]:
-        console.print(f"[bold red]Error:[/bold red] {result['error']}")
-        return
+    ssl_data = result.get("ssl", {}) or {}
 
-    summary_table = Table(title="Target", box=box.ROUNDED)
-    summary_table.add_column("Item", style="cyan")
-    summary_table.add_column("Value", style="white")
+    target_table = Table(title="Target", box=box.ASCII, header_style="bold cyan", show_lines=False)
+    target_table.add_column("Item", style="bold")
+    target_table.add_column("Value")
 
-    summary_table.add_row("Target URL", result["target_url"])
-    summary_table.add_row("Final URL", result["final_url"])
-    summary_table.add_row("Status Code", str(result["status_code"]))
-    summary_table.add_row("HTTPS", "Yes" if result["is_https"] else "No")
-    ssl_info = result.get("ssl_certificate", {})
+    target_table.add_row("Target URL", str(result.get("target_url") or "N/A"))
+    target_table.add_row("Final URL", str(result.get("final_url") or "N/A"))
+    target_table.add_row("Status Code", str(result.get("status_code") or "N/A"))
+    target_table.add_row("HTTPS", "[green]Yes[/green]" if result.get("https") else "[red]No[/red]")
 
-    if ssl_info.get("checked"):
-        days_left = ssl_info.get("days_until_expiry")
-        not_after = ssl_info.get("not_after")
-
-        if days_left is not None and not_after:
-            summary_table.add_row("SSL Expires", f"{not_after} ({days_left} days left)")
-        elif ssl_info.get("error"):
-            summary_table.add_row("SSL Certificate", f"Check failed: {ssl_info['error']}")
-
-    console.print(summary_table)
-
-    findings = result["findings"]
-    display_score_table(findings, "Website Score")
-
-    if findings:
-        display_findings_table(findings)
-        display_top_recommendations(findings)
-
-        if show_details:
-            display_detailed_findings(findings)
+    if ssl_data.get("checked"):
+        expires = ssl_data.get("not_after")
+        days = ssl_data.get("days_until_expiry")
+        target_table.add_row("SSL Expires", f"{expires} ({days} days left)")
     else:
-        console.print("[green]No basic website findings found.[/green]")
+        target_table.add_row("SSL Expires", "Not checked")
+
+    target_table.add_row(
+        "Full Check",
+        "[yellow]Enabled[/yellow]" if result.get("full_check_enabled") else "Disabled",
+    )
+
+    if result.get("full_check_enabled"):
+        target_table.add_row("Paths Tested", str(result.get("full_check_paths_tested", 0)))
+
+    console.print(target_table)
+
+    print_score_table("Website Score", result)
+    print_findings(result)
+    print_observations(result)
+
+    if show_details:
+        print_detailed_explanation(result)
 
 
-def display_email_result(result: dict, show_details: bool):
+def print_email_result(result: dict, show_details: bool = False) -> None:
     console.print("\n[bold cyan]Email / Domain Security[/bold cyan]")
 
-    if result["error"]:
-        console.print(f"[bold red]Error:[/bold red] {result['error']}")
-        return
+    table = Table(title="DNS Summary", box=box.ASCII, header_style="bold cyan", show_lines=False)
+    table.add_column("Item", style="bold")
+    table.add_column("Value")
 
-    summary_table = Table(title="DNS Summary", box=box.ROUNDED)
-    summary_table.add_column("Item", style="cyan")
-    summary_table.add_column("Value", style="white")
+    table.add_row("Domain", str(result.get("domain") or "N/A"))
+    table.add_row("MX Records", str(len(result.get("mx_records", []))))
+    table.add_row("SPF Records", str(len(result.get("spf_records", []))))
+    table.add_row("DMARC Record", "[green]Yes[/green]" if result.get("dmarc_record") else "[red]No[/red]")
+    table.add_row("DMARC Policy", str(result.get("dmarc_policy") or "N/A"))
+    table.add_row("DKIM Selector", str(result.get("dkim_selector") or "N/A"))
+    table.add_row("DKIM Record", "[green]Yes[/green]" if result.get("dkim_record") else "No")
 
-    summary_table.add_row("Domain", result["domain"])
-    summary_table.add_row("MX Records", str(len(result["mx_records"])))
-    summary_table.add_row("SPF Records", str(len(result["spf_records"])))
-    summary_table.add_row("DMARC Record", "Yes" if result["dmarc_record"] else "No")
-    summary_table.add_row("DMARC Policy", result["dmarc_policy"] or "N/A")
-    summary_table.add_row("DKIM Selector", result["dkim_selector"] or "N/A")
-    summary_table.add_row("DKIM Record", "Yes" if result["dkim_record"] else "No")
+    console.print(table)
 
-    console.print(summary_table)
+    print_score_table("Email Domain Score", result)
+    print_findings(result)
+    print_observations(result)
 
-    findings = result["findings"]
-    display_score_table(findings, "Email Domain Score")
-
-    if findings:
-        display_findings_table(findings)
-        display_top_recommendations(findings)
-
-        if show_details:
-            display_detailed_findings(findings)
-    else:
-        console.print("[green]No basic email/domain findings found.[/green]")
+    if show_details:
+        print_detailed_explanation(result)
 
 
-def display_repository_result(result: dict, show_details: bool):
+def print_repository_result(result: dict, show_details: bool = False) -> None:
     console.print("\n[bold cyan]Repository Hygiene[/bold cyan]")
 
-    if result["error"]:
-        console.print(f"[bold red]Error:[/bold red] {result['error']}")
-        return
-
-    summary = result["summary"]
-
-    summary_table = Table(title="Repository Summary", box=box.ROUNDED)
-    summary_table.add_column("Item", style="cyan")
-    summary_table.add_column("Value", style="white")
-
-    summary_table.add_row("Repository Path", result["repo_path"])
-    summary_table.add_row("Files Checked", str(result["files_checked"]))
-    summary_table.add_row(".gitignore", "Yes" if summary["gitignore_exists"] else "No")
-    summary_table.add_row("README.md", "Yes" if summary["readme_exists"] else "No")
-    summary_table.add_row("Dockerfile", "Yes" if summary["dockerfile_exists"] else "No")
-    summary_table.add_row(".dockerignore", "Yes" if summary["dockerignore_exists"] else "No")
-    summary_table.add_row("Sensitive Files", str(summary["sensitive_files_found"]))
-    summary_table.add_row("Database Files", str(summary["database_files_found"]))
-    summary_table.add_row("Secret Hits", str(summary["secret_keyword_hits"]))
-
-    console.print(summary_table)
-
-    findings = result["findings"]
-    display_score_table(findings, "Repository Score")
-
-    if findings:
-        display_findings_table(findings)
-        display_top_recommendations(findings)
-
-        if show_details:
-            display_detailed_findings(findings)
-    else:
-        console.print("[green]No basic repository hygiene findings found.[/green]")
-
-
-def display_score_table(findings: list, title: str):
-    score_result = calculate_score(findings)
-    severity_counts = count_findings_by_severity(findings)
-
-    score_table = Table(title=title, box=box.SIMPLE_HEAVY)
-    score_table.add_column("Score", style="bold cyan")
-    score_table.add_column("Rating", style="bold white")
-    score_table.add_column("High", justify="center")
-    score_table.add_column("Medium", justify="center")
-    score_table.add_column("Low", justify="center")
-    score_table.add_column("Info", justify="center")
-
-    score_table.add_row(
-        f"{score_result['score']} / 100",
-        score_result["rating"],
-        str(severity_counts["High"]),
-        str(severity_counts["Medium"]),
-        str(severity_counts["Low"]),
-        str(severity_counts["Info"])
-    )
-
-    console.print(score_table)
-
-
-def display_findings_table(findings: list):
-    findings_table = Table(title="Findings", box=box.ROUNDED)
-    findings_table.add_column("Severity", style="red", width=10)
-    findings_table.add_column("Finding", style="white")
-    findings_table.add_column("Recommendation", style="green")
-
-    for finding in findings:
-        findings_table.add_row(
-            finding["severity"],
-            finding["title"],
-            finding["recommendation"]
-        )
-
-    console.print(findings_table)
-
-
-def display_top_recommendations(findings: list):
-    actionable_findings = [
-        finding for finding in findings
-        if finding.get("severity") in {"High", "Medium", "Low"}
-    ]
-
-    if not actionable_findings:
-        return
-
-    console.print("[bold]Recommended next steps:[/bold]")
-
-    for index, finding in enumerate(actionable_findings[:5], start=1):
-        console.print(f"{index}. {finding['recommendation']}")
-
-
-def display_detailed_findings(findings: list):
-    console.print("\n[bold]Detailed Explanation[/bold]")
-
-    for index, finding in enumerate(findings, start=1):
-        console.print(f"\n[bold]{index}. {finding['title']}[/bold]")
-        console.print(f"[red]Severity:[/red] {finding['severity']}")
-        console.print(f"[yellow]Evidence:[/yellow] {finding['evidence']}")
-        console.print(f"[cyan]Why it matters:[/cyan] {finding['why']}")
-        console.print(f"[green]Recommendation:[/green] {finding['recommendation']}")
-
-
-def display_final_summary(
-    website_result: dict | None,
-    email_result: dict | None,
-    repository_result: dict | None
-):
-    summary_table = Table(title="Final Summary", box=box.DOUBLE_EDGE)
-    summary_table.add_column("Component", style="cyan")
-    summary_table.add_column("Score", style="bold white")
-    summary_table.add_column("Rating", style="bold white")
-    summary_table.add_column("Findings", justify="center")
-    summary_table.add_column("Status", style="green")
-
-    add_summary_row(summary_table, "Website", website_result)
-    add_summary_row(summary_table, "Email / Domain", email_result)
-    add_summary_row(summary_table, "Repository", repository_result)
-
-    console.print("\n")
-    console.print(summary_table)
-
-
-def add_summary_row(table: Table, component_name: str, result: dict | None):
-    if result is None:
-        table.add_row(component_name, "Not scanned", "-", "-", "Skipped")
-        return
-
-    if result.get("error"):
-        table.add_row(component_name, "Error", "-", "-", "Failed")
-        return
-
-    findings = result.get("findings", [])
-    score_result = calculate_score(findings)
-
-    status = "Good" if score_result["score"] >= 90 else "Needs review"
+    table = Table(title="Repository Summary", box=box.ASCII, header_style="bold cyan", show_lines=False)
+    table.add_column("Item", style="bold")
+    table.add_column("Value")
 
     table.add_row(
-        component_name,
-        f"{score_result['score']} / 100",
-        score_result["rating"],
-        str(len(findings)),
-        status
+        "Repository Path",
+        str(get_first_value(result, ["display_path", "path", "repo_path", "repository_path", "target_path"])),
     )
-    
+    table.add_row("Files Checked", str(result.get("files_checked", 0)))
+    table.add_row(
+        ".gitignore",
+        "[green]Yes[/green]"
+        if get_bool_value(result, ["has_gitignore", "gitignore_exists", "gitignore_present", "gitignore"])
+        else "[red]No[/red]",
+    )
+    table.add_row(
+        "README.md",
+        "[green]Yes[/green]"
+        if get_bool_value(result, ["has_readme", "readme_exists", "readme_present", "readme"])
+        else "[red]No[/red]",
+    )
+    table.add_row(
+        "Dockerfile",
+        "[green]Yes[/green]"
+        if get_bool_value(result, ["has_dockerfile", "dockerfile_exists", "dockerfile_present", "dockerfile"])
+        else "No",
+    )
+    table.add_row(
+        ".dockerignore",
+        "[green]Yes[/green]"
+        if get_bool_value(result, ["has_dockerignore", "dockerignore_exists", "dockerignore_present", "dockerignore"])
+        else "No",
+    )
+    table.add_row("Sensitive Files", str(len(result.get("sensitive_files", []))))
+    table.add_row("Database Files", str(len(result.get("database_files", []))))
+    table.add_row("Secret Hits", str(len(result.get("secret_hits", []))))
+
+    console.print(table)
+
+    print_score_table("Repository Score", result)
+    print_findings(result)
+    print_observations(result)
+
+    if show_details:
+        print_detailed_explanation(result)
+
+
+def print_score_table(title: str, result: dict) -> None:
+    counts = result.get("severity_counts", {})
+    score = int(result.get("score", 0))
+
+    table = Table(title=title, box=box.ASCII, header_style="bold cyan", show_lines=False)
+    table.add_column("Score")
+    table.add_column("Rating")
+    table.add_column("High")
+    table.add_column("Medium")
+    table.add_column("Low")
+    table.add_column("Info")
+
+    table.add_row(
+        format_score(score),
+        str(result.get("rating", "-")),
+        f"[bold red]{counts.get('High', 0)}[/bold red]",
+        f"[bold yellow]{counts.get('Medium', 0)}[/bold yellow]",
+        f"[bold blue]{counts.get('Low', 0)}[/bold blue]",
+        f"[dim]{counts.get('Info', 0)}[/dim]",
+    )
+
+    console.print(table)
+
+
+def print_findings(result: dict) -> None:
+    findings = result.get("findings", [])
+
+    if not findings:
+        console.print("\n[bold green]No security findings found.[/bold green]")
+        return
+
+    table = Table(title="Findings", box=box.ASCII, header_style="bold cyan", show_lines=False)
+    table.add_column("Severity", style="bold")
+    table.add_column("Finding")
+    table.add_column("Recommendation")
+
+    for finding in findings:
+        severity = str(finding.get("severity", "Info"))
+        table.add_row(
+            format_severity(severity),
+            str(finding.get("title", "N/A")),
+            str(finding.get("recommendation", "N/A")),
+        )
+
+    console.print(table)
+
+    actionable = []
+    seen_recommendations = set()
+
+    for finding in findings:
+        recommendation = finding.get("recommendation")
+
+        if finding.get("severity") not in ["High", "Medium", "Low"]:
+            continue
+
+        if not recommendation:
+            continue
+
+        if recommendation in seen_recommendations:
+            continue
+
+        seen_recommendations.add(recommendation)
+        actionable.append(recommendation)
+
+    if actionable:
+        console.print("[bold]Recommended next steps:[/bold]")
+
+        for index, recommendation in enumerate(actionable, start=1):
+            console.print(f"[cyan]{index}.[/cyan] {recommendation}")
+
+
+def print_observations(result: dict) -> None:
+    observations = result.get("observations", [])
+
+    if not observations:
+        return
+
+    table = Table(title="Observations", box=box.ASCII, header_style="bold cyan", show_lines=False)
+    table.add_column("Observation", style="bold")
+    table.add_column("Details")
+
+    for observation in observations:
+        table.add_row(
+            str(observation.get("title", "N/A")),
+            str(observation.get("details", "N/A")),
+        )
+
+    console.print(table)
+
+
+def print_detailed_explanation(result: dict) -> None:
+    findings = result.get("findings", [])
+
+    if not findings:
+        return
+
+    console.print("\n[bold cyan]Detailed Explanation[/bold cyan]")
+
+    for index, finding in enumerate(findings, start=1):
+        console.print(f"\n[bold]{index}. {finding.get('title', 'N/A')}[/bold]")
+        console.print(f"Severity: {format_severity(finding.get('severity', 'Info'))}")
+        console.print(f"Category: {finding.get('category', 'N/A')}")
+        console.print(f"Evidence: {finding.get('evidence', 'N/A')}")
+        console.print(f"Why it matters: {finding.get('why', 'N/A')}")
+        console.print(f"Recommendation: {finding.get('recommendation', 'N/A')}")
+        console.print(f"OWASP: {finding.get('owasp', 'Not directly mapped')}")
+        console.print(f"CWE: {finding.get('cwe', 'Not directly mapped')}")
+
+        references = finding.get("references", [])
+
+        if references:
+            console.print("References:")
+
+            for reference in references:
+                console.print(f"- {reference}")
+
+
+def print_final_summary(website_result: dict | None, email_result: dict | None, repo_result: dict | None) -> None:
+    table = Table(title="Final Summary", box=box.ASCII, header_style="bold cyan", show_lines=False)
+    table.add_column("Component")
+    table.add_column("Score")
+    table.add_column("Rating")
+    table.add_column("Findings")
+    table.add_column("Status")
+
+    add_summary_row(table, "Website", website_result)
+    add_summary_row(table, "Email / Domain", email_result)
+    add_summary_row(table, "Repository", repo_result)
+
+    console.print("\n")
+    console.print(table)
+
+
+def add_summary_row(table: Table, name: str, result: dict | None) -> None:
+    if not result:
+        table.add_row(name, "Not scanned", "-", "-", "[dim]Skipped[/dim]")
+        return
+
+    score = int(result.get("score", 0))
+    rating = result.get("rating", "-")
+    findings_count = len(result.get("findings", []))
+    status = "[green]Good[/green]" if score >= 75 else "[yellow]Needs review[/yellow]"
+
+    table.add_row(
+        name,
+        format_score(score),
+        str(rating),
+        str(findings_count),
+        status,
+    )
+
+
+def format_score(score: int) -> str:
+    if score >= 90:
+        return f"[bold green]{score} / 100[/bold green]"
+
+    if score >= 75:
+        return f"[green]{score} / 100[/green]"
+
+    if score >= 40:
+        return f"[yellow]{score} / 100[/yellow]"
+
+    return f"[bold red]{score} / 100[/bold red]"
+
+
+def format_severity(severity: str) -> str:
+    styles = {
+        "High": "[bold red]High[/bold red]",
+        "Medium": "[bold yellow]Medium[/bold yellow]",
+        "Low": "[bold blue]Low[/bold blue]",
+        "Info": "[dim]Info[/dim]",
+    }
+
+    return styles.get(severity, severity)
+
+
 def save_json_output(
+    output_path: str,
     website_result: dict | None,
     email_result: dict | None,
-    repository_result: dict | None,
-    output_path: str
-) -> str:
-    """
-    Saves scan results as machine-readable JSON.
-    """
+    repo_result: dict | None,
+) -> None:
+    payload = {
+        "tool": "WebTrust Auditor",
+        "version": __version__,
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "components": {
+            "website": build_json_component(website_result),
+            "email_domain": build_json_component(email_result),
+            "repository": build_json_component(repo_result),
+        },
+    }
+
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    json_data = build_json_output(
-        website_result,
-        email_result,
-        repository_result
-    )
-
-    output_file.write_text(
-        json.dumps(json_data, indent=2, ensure_ascii=False),
-        encoding="utf-8"
-    )
-
-    return str(output_file)
+    with output_file.open("w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2, ensure_ascii=False)
 
 
-def build_json_output(
-    website_result: dict | None,
-    email_result: dict | None,
-    repository_result: dict | None
-) -> dict:
-    """
-    Builds a structured JSON report.
-    """
-    return {
-        "tool": "WebTrust Auditor",
-        "version": __version__,
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "components": {
-            "website": build_component_json(website_result),
-            "email_domain": build_component_json(email_result),
-            "repository": build_component_json(repository_result)
-        }
-    }
-
-
-def build_component_json(result: dict | None) -> dict:
-    """
-    Adds score and severity summary to a scan result.
-    """
-    if result is None:
+def build_json_component(result: dict | None) -> dict:
+    if not result:
         return {
-            "scanned": False,
-            "status": "skipped"
+            "status": "skipped",
+            "score": None,
+            "rating": None,
+            "severity_counts": None,
+            "findings_count": None,
+            "observations_count": None,
+            "raw_result": None,
         }
-
-    if result.get("error"):
-        return {
-            "scanned": True,
-            "status": "failed",
-            "error": result.get("error"),
-            "raw_result": result
-        }
-
-    findings = result.get("findings", [])
-    score_result = calculate_score(findings)
-    severity_counts = count_findings_by_severity(findings)
 
     return {
-        "scanned": True,
-        "status": "completed",
-        "score": score_result,
-        "severity_counts": severity_counts,
-        "findings_count": len(findings),
-        "raw_result": result
+        "status": "scanned",
+        "score": result.get("score"),
+        "rating": result.get("rating"),
+        "severity_counts": result.get("severity_counts"),
+        "findings_count": len(result.get("findings", [])),
+        "observations_count": len(result.get("observations", [])),
+        "raw_result": result,
     }

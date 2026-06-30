@@ -30,6 +30,7 @@ def scan_email_domain(domain: str, dkim_selector: str | None = None) -> dict:
         "dmarc_policy": None,
         "dkim_selector": dkim_selector,
         "dkim_record": None,
+        "observations": [],
         "findings": [],
         "error": None,
     }
@@ -38,6 +39,15 @@ def scan_email_domain(domain: str, dkim_selector: str | None = None) -> dict:
         result["error"] = (
             "Invalid domain input. Provide a domain such as example.com "
             "or an email address such as user@example.com."
+        )
+        result["findings"].append(
+            {
+                "title": "Invalid domain input",
+                "severity": "High",
+                "evidence": f"Input was normalized to: {normalized_domain}",
+                "why": "Invalid domain input prevents reliable DNS and email security checks.",
+                "recommendation": "Provide a valid domain such as example.com or an email address such as user@example.com.",
+            }
         )
         return result
 
@@ -117,9 +127,6 @@ def is_valid_domain_name(domain: str) -> bool:
 def domain_has_public_dns_records(domain: str) -> bool:
     """
     Checks whether the domain appears to exist in public DNS.
-
-    The domain is considered existing if at least one common DNS record type
-    returns an answer.
     """
     record_types = ["SOA", "NS", "A", "AAAA", "MX", "TXT"]
 
@@ -133,9 +140,6 @@ def domain_has_public_dns_records(domain: str) -> bool:
 
 
 def check_mx_records(result: dict) -> None:
-    """
-    Checks MX records.
-    """
     domain = result["domain"]
     mx_records = resolve_records(domain, "MX")
 
@@ -161,9 +165,6 @@ def check_mx_records(result: dict) -> None:
 
 
 def check_spf_records(result: dict) -> None:
-    """
-    Checks SPF TXT records.
-    """
     domain = result["domain"]
     txt_records = resolve_txt_records(domain)
 
@@ -261,9 +262,6 @@ def check_spf_records(result: dict) -> None:
 
 
 def check_dmarc_record(result: dict) -> None:
-    """
-    Checks DMARC record and policy.
-    """
     domain = result["domain"]
     dmarc_domain = f"_dmarc.{domain}"
     txt_records = resolve_txt_records(dmarc_domain)
@@ -328,23 +326,15 @@ def check_dmarc_record(result: dict) -> None:
 
 
 def check_dkim_record(result: dict, dkim_selector: str | None) -> None:
-    """
-    Checks DKIM record if a selector is provided.
-    """
     domain = result["domain"]
 
     if not dkim_selector:
-        result["findings"].append(
+        result["observations"].append(
             {
                 "title": "DKIM check skipped",
-                "severity": "Info",
-                "evidence": "No DKIM selector was provided.",
-                "why": (
-                    "DKIM records require a selector, for example "
-                    "google._domainkey.example.com."
-                ),
-                "recommendation": (
-                    "Run the scan again with --dkim-selector if you know the selector."
+                "details": (
+                    "No DKIM selector was provided. Run the scan again with --dkim-selector "
+                    "if you know the selector."
                 ),
             }
         )

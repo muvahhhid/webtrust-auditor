@@ -2,47 +2,62 @@ SEVERITY_PENALTIES = {
     "High": 25,
     "Medium": 10,
     "Low": 5,
-    "Info": 0
+    "Info": 0,
 }
 
 
-def calculate_score(findings: list) -> dict:
+def calculate_score(findings: list[dict]) -> dict:
     """
-    Calculates a simple security readiness score based on findings.
+    Calculates a score from 0 to 100 based on finding severities.
 
-    The score starts at 100.
-    Each finding reduces the score depending on severity.
+    Observations should not be passed here because they are not security findings.
     """
     score = 100
-    deductions = []
+    severity_counts = get_severity_counts(findings)
 
-    for finding in findings:
-        severity = finding.get("severity", "Info")
+    for severity, count in severity_counts.items():
         penalty = SEVERITY_PENALTIES.get(severity, 0)
+        score -= penalty * count
 
-        score -= penalty
-
-        deductions.append({
-            "title": finding.get("title", "Unknown finding"),
-            "severity": severity,
-            "penalty": penalty
-        })
-
-    if score < 0:
-        score = 0
+    score = max(score, 0)
 
     return {
         "score": score,
         "rating": get_rating(score),
-        "total_penalty": 100 - score,
-        "deductions": deductions
+        "severity_counts": severity_counts,
     }
 
 
+def get_severity_counts(findings: list[dict]) -> dict:
+    """
+    Counts findings by severity.
+    """
+    counts = {
+        "High": 0,
+        "Medium": 0,
+        "Low": 0,
+        "Info": 0,
+    }
+
+    for finding in findings:
+        severity = finding.get("severity", "Info")
+
+        if severity not in counts:
+            severity = "Info"
+
+        counts[severity] += 1
+
+    return counts
+
+
+def count_findings_by_severity(findings: list[dict]) -> dict:
+    """
+    Backward-compatible alias for older tests and older code.
+    """
+    return get_severity_counts(findings)
+
+
 def get_rating(score: int) -> str:
-    """
-    Converts a numeric score into a simple rating.
-    """
     if score >= 90:
         return "A"
 
@@ -56,25 +71,3 @@ def get_rating(score: int) -> str:
         return "D"
 
     return "F"
-
-
-def count_findings_by_severity(findings: list) -> dict:
-    """
-    Counts findings by severity level.
-    """
-    counts = {
-        "High": 0,
-        "Medium": 0,
-        "Low": 0,
-        "Info": 0
-    }
-
-    for finding in findings:
-        severity = finding.get("severity", "Info")
-
-        if severity not in counts:
-            counts["Info"] += 1
-        else:
-            counts[severity] += 1
-
-    return counts

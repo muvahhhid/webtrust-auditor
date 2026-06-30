@@ -1,198 +1,117 @@
 # WebTrust Auditor Report
 
-## Scan Information
+Generated at: `2026-06-30T14:25:31.170228Z`
+Tool version: `v1.7.0`
 
-- Scan date: 2026-06-27 21:33:40
-- Target URL: https://github.com
-- Final URL: https://github.com/
-- Status code: 200
-- HTTPS enabled: Yes
-- Email domain: github.com
-- Repository path: C:\Users\user\Desktop\webtrust-auditor
+> WebTrust Auditor is a defensive security readiness checker. Full website checks, when enabled, use a fixed curated list of low-impact GET-only checks and must only be used on websites you own or are authorized to test.
 
-## Website Security Results
+## Executive Summary
 
-### Website Score
+| Component | Score | Rating | Findings | Observations | Status |
+|---|---:|---|---:|---:|---|
+| Website | 95 / 100 | A | 1 | 5 | Good |
+| Email / Domain | 100 / 100 | A | 0 | 1 | Good |
+| Repository | 100 / 100 | A | 0 | 0 | Good |
 
-**Website Security Score:** 95 / 100
+## Website Security
 
-**Rating:** A
-
-**Total penalty:** -5 points
-
-### Website Summary
-
-The website scan detected **1 finding(s)** related to basic website security readiness.
-
-### Findings by Severity
-
-| Severity | Count |
+| Item | Value |
 |---|---|
-| High | 0 |
-| Medium | 0 |
-| Low | 1 |
-| Info | 0 |
+| Target URL | `https://github.com` |
+| Final URL | `https://github.com/` |
+| Status Code | `200` |
+| HTTPS | Yes |
+| SSL Expires | `2026-08-02 23:59:59 UTC` (33 days left) |
+| Full Check | Enabled |
+| Paths Tested | `146` |
 
-### Security Header Status
+### Score
 
-| Header | Status |
-|---|---|
-| `Content-Security-Policy` | Present |
+| Score | Rating | High | Medium | Low | Info |
+|---:|---|---:|---:|---:|---:|
+| 95 / 100 | A | 0 | 0 | 1 | 0 |
 
-| `Strict-Transport-Security` | Present |
-
-| `X-Frame-Options` | Present |
-
-| `X-Content-Type-Options` | Present |
-
-| `Referrer-Policy` | Present |
-
-| `Permissions-Policy` | Missing |
-
-### Website Findings Overview
-
-| Severity | Finding | Evidence |
-|---|---|---|
-| Low | Missing Permissions-Policy | Permissions-Policy header was not found. |
-
-### Website Score Deductions
-
-| Severity | Finding | Penalty |
-|---|---|---|
-| Low | Missing Permissions-Policy | -5 |
-
-### Website Detailed Findings
+### Findings
 
 #### 1. Missing Permissions-Policy
 
-**Severity:** Low
+- **Severity:** Low
+- **Category:** Browser Security Hardening
+- **Evidence:** The Permissions-Policy header was not found in the HTTP response.
+- **Why it matters:** Security headers help browsers enforce safer behavior and reduce common client-side risks.
+- **Recommendation:** Add the Permissions-Policy header to improve browser-side security.
+- **OWASP:** OWASP Top 10 A05:2021 - Security Misconfiguration
+- **CWE:** CWE-693 - Protection Mechanism Failure
+- **References:**
+  - https://owasp.org/Top10/A05_2021-Security_Misconfiguration/
+  - https://cwe.mitre.org/data/definitions/693.html
 
-**Evidence:**
+### Observations
 
-Permissions-Policy header was not found.
-
-**Why it matters:**
-
-Limits browser features such as camera, microphone or geolocation.
-
-**Recommendation:**
-
-Add the Permissions-Policy header to improve browser-side security.
-
-## Email / Domain Security Results
-
-### Email Domain Score
-
-**Email Domain Security Score:** 100 / 100
-
-**Rating:** A
-
-**Total penalty:** -0 points
-
-### DNS Record Summary
-
-- Domain: github.com
-- MX records found: 1
-- SPF records found: 1
-- DMARC record found: Yes
-- DMARC policy: quarantine
-- DKIM selector: N/A
-- DKIM record found: No
-
-### MX Records
-
-- `github-com.mail.protection.outlook.com`
-
-### SPF Records
-
-- `v=spf1 ip4:192.30.252.0/22 include:spf.protection.outlook.com include:_netblocks.google.com include:_netblocks2.google.com include:mail.zendesk.com include:_spf.salesforce.com include:servers.mcsv.net include:mktomail.com include:sendgrid.net ip4:62.253.227.114 ip4:166.78.69.169 ip4:166.78.69.170 ip4:166.78.71.131 ~all`
-
-### DMARC Record
-
-`v=DMARC1; p=quarantine; sp=reject; pct=100; rua=mailto:dmarc@github.com; ruf=mailto:dmarc@github.com; fo=1`
-
-### Findings by Severity
-
-| Severity | Count |
+| Observation | Details |
 |---|---|
-| High | 0 |
-| Medium | 0 |
-| Low | 0 |
-| Info | 1 |
+| Full website check enabled | Fixed GET-only checklist was used. No brute-force, crawling, fuzzing or exploitation. |
+| robots.txt check | Found. Review for sensitive internal paths. |
+| security.txt check | Not found. Consider adding /.well-known/security.txt. |
+| .well-known/security.txt check | Found. |
+| Full check paths tested | 146 fixed low-impact GET-only paths were checked. |
 
-### Email / Domain Findings Overview
+## Email / Domain Security
 
-| Severity | Finding | Evidence |
-|---|---|---|
-| Info | DKIM check skipped | No DKIM selector was provided. |
-
-### Email / Domain Score Deductions
-
-| Severity | Finding | Penalty |
-|---|---|---|
-| Info | DKIM check skipped | -0 |
-
-### Email / Domain Detailed Findings
-
-#### 1. DKIM check skipped
-
-**Severity:** Info
-
-**Evidence:**
-
-No DKIM selector was provided.
-
-**Why it matters:**
-
-DKIM records require a selector, for example google._domainkey.example.com.
-
-**Recommendation:**
-
-Run the scan again with --dkim-selector if you know the selector.
-
-## Repository Hygiene Results
-
-### Repository Score
-
-**Repository Hygiene Score:** 100 / 100
-
-**Rating:** A
-
-**Total penalty:** -0 points
-
-### Repository Summary
-
-- Repository path: C:\Users\user\Desktop\webtrust-auditor
-- Files checked: 26
-- .gitignore exists: Yes
-- README.md exists: Yes
-- Dockerfile exists: No
-- .dockerignore exists: No
-- Sensitive files found: 0
-- Database files found: 0
-- Secret keyword hits: 0
-
-### Findings by Severity
-
-| Severity | Count |
+| Item | Value |
 |---|---|
-| High | 0 |
-| Medium | 0 |
-| Low | 0 |
-| Info | 0 |
+| Domain | `github.com` |
+| MX Records | `1` |
+| SPF Records | `1` |
+| DMARC Record | Yes |
+| DMARC Policy | `quarantine` |
+| DKIM Selector | `N/A` |
+| DKIM Record | No |
 
-### Repository Findings Overview
+### Score
 
-No findings to display.
+| Score | Rating | High | Medium | Low | Info |
+|---:|---|---:|---:|---:|---:|
+| 100 / 100 | A | 0 | 0 | 0 | 0 |
 
-### Repository Score Deductions
+### Findings
 
-No score deductions were applied.
+No security findings found.
 
-### Repository Detailed Findings
+### Observations
 
-No detailed findings to display.
+| Observation | Details |
+|---|---|
+| DKIM check skipped | No DKIM selector was provided. Run the scan again with --dkim-selector if you know the selector. |
 
-## Notes
+## Repository Hygiene
 
-This report is generated by WebTrust Auditor. The tool performs passive checks only. It does not attack, exploit, brute-force, send emails or modify the target system.
+| Item | Value |
+|---|---|
+| Repository Path | `N/A` |
+| Files Checked | `25` |
+| .gitignore | Yes |
+| README.md | Yes |
+| Dockerfile | No |
+| .dockerignore | No |
+| Sensitive Files | `0` |
+| Database Files | `0` |
+| Secret Hits | `0` |
+
+### Score
+
+| Score | Rating | High | Medium | Low | Info |
+|---:|---|---:|---:|---:|---:|
+| 100 / 100 | A | 0 | 0 | 0 | 0 |
+
+### Findings
+
+No security findings found.
+
+## Safety Notice
+
+WebTrust Auditor is intended for defensive security review, learning and authorized assessments.
+
+Default website checks are basic readiness checks. Full website checks, when enabled, are intended only for websites you own or are authorized to test.
+
+The tool does not perform directory brute-forcing, crawling, fuzzing, exploitation, authentication bypass, POST requests or destructive actions.
